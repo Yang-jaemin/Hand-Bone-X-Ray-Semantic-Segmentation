@@ -46,7 +46,7 @@ def save_model(model, saved_dir, file_name="fcn_resnet50_best_model.pt"):
 
 
 # ! Validation Process
-def validation(epoch, model, data_loader, criterion, classes, wandb, thr=0.5):
+def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
     print()
     print(f"Start Validation #{epoch:2d}")
     model.eval()
@@ -91,7 +91,7 @@ def validation(epoch, model, data_loader, criterion, classes, wandb, thr=0.5):
 
     avg_dice = torch.mean(dices_per_class).item()
 
-    if wandb:
+    if _wandb:
         wandb.log(
             {"valid_loss": valid_loss / len(data_loader), "avg_dice": avg_dice}, step=epoch
         )
@@ -218,6 +218,4 @@ if __name__ == "__main__":
 
 
     main(args)
-
-    # receive a model learning completion alarm, Modify alarm.py is needed
-    # send_message_slack(text="Model Learning Completed")
+    send_message_slack(text="Model Learning Completed")
