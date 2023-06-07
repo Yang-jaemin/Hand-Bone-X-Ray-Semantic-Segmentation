@@ -1,4 +1,5 @@
 import os
+import argparse
 
 import albumentations as A
 import cv2
@@ -9,55 +10,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import tqdm
 
-SAVED_DIR = "/opt/ml/input/code/best_models"
-CLASSES = [
-    "finger-1",
-    "finger-2",
-    "finger-3",
-    "finger-4",
-    "finger-5",
-    "finger-6",
-    "finger-7",
-    "finger-8",
-    "finger-9",
-    "finger-10",
-    "finger-11",
-    "finger-12",
-    "finger-13",
-    "finger-14",
-    "finger-15",
-    "finger-16",
-    "finger-17",
-    "finger-18",
-    "finger-19",
-    "Trapezium",
-    "Trapezoid",
-    "Capitate",
-    "Hamate",
-    "Scaphoid",
-    "Lunate",
-    "Triquetrum",
-    "Pisiform",
-    "Radius",
-    "Ulna",
-]
-CLASS2IND = {v: i for i, v in enumerate(CLASSES)}
-IND2CLASS = {v: k for k, v in CLASS2IND.items()}
-
-# ! Best Trained Model Importation
-model = torch.load(os.path.join(SAVED_DIR, "fcn_resnet50_best_model.pt"))
-IMAGE_ROOT = ""
-pngs = {
-    os.path.relpath(os.path.join(root, fname), start=IMAGE_ROOT)
-    for root, _dirs, files in os.walk(IMAGE_ROOT)
-    for fname in files
-    if os.path.splitext(fname)[1].lower() == ".png"
-}
-
-
 # ! Definition of Test Dataset
 class XRayInferenceDataset(Dataset):
-    def __init__(self, transforms=None):
+    def __init__(self, pngs, transforms=None):
         _filenames = pngs
         _filenames = np.array(sorted(_filenames))
 
@@ -116,14 +71,14 @@ def decode_rle_to_mask(rle, height, width):
 
 
 # ! Inference Process
-def test(model, data_loader, thr=0.5):
+def test(model, data_loader, classes, ind2class, thr=0.5):
     model = model.cuda()
     model.eval()
 
     rles = []
     filename_and_class = []
     with torch.no_grad():
-        n_class = len(CLASSES)
+        n_class = len(classes)
 
         for step, (images, image_names) in tqdm(
             enumerate(data_loader), total=len(data_loader)
@@ -140,29 +95,65 @@ def test(model, data_loader, thr=0.5):
                 for c, segm in enumerate(output):
                     rle = encode_mask_to_rle(segm)
                     rles.append(rle)
-                    filename_and_class.append(f"{IND2CLASS[c]}_{image_name}")
+                    filename_and_class.append(f"{ind2class[c]}_{image_name}")
 
     return rles, filename_and_class
 
 
-# ! Albumentation Transforms & Generation of Test Dataset
-infer_transform = A.Resize(512, 512)
-test_dataset = XRayInferenceDataset(transforms=infer_transform)
-test_loader = DataLoader(
-    dataset=test_dataset, batch_size=2, shuffle=False, num_workers=2, drop_last=False
-)
 
-rles, filename_and_class = test(model, test_loader)
+def main(args):
+    CLASS2IND = {v: i for i, v in enumerate(args.classes)}
+    IND2CLASS = {v: k for k, v in CLASS2IND.items()}
 
-
-# ! Save CSV file for Submission
-classes, filename = zip(*[x.split("_") for x in filename_and_class])
-image_name = [os.path.basename(f) for f in filename]
-df = pd.DataFrame(
-    {
-        "image_name": image_name,
-        "class": classes,
-        "rle": rles,
+    # ! Best Trained Model Importation
+    model = torch.load(os.path.join(args.saved_dir, args.model + ".pt"))
+    
+    pngs = {
+        os.path.relpath(os.path.join(root, fname), start=IMAGE_ROOT)
+        for root, _dirs, files in os.walk(IMAGE_ROOT)
+        for fname in files
+        if os.path.splitext(fname)[1].lower() == ".png"
     }
-)
-df.to_csv("output.csv", index=False)
+
+
+    # ! Albumentation Transforms & Generation of Test Dataset
+    infer_transform = A.Resize(512, 512)
+    test_dataset = XRayInferenceDataset(pngs, transforms=infer_transform)
+    test_loader = DataLoader(
+        dataset=test_dataset, batch_size=2, shuffle=False, num_workers=2, drop_last=False
+    )
+
+    rles, filename_and_class = test(model, test_loader, args.classes, IND2CLASS)
+
+
+    # ! Save CSV file for Submission
+    classes, filename = zip(*[x.split("_") for x in filename_and_class])
+    image_name = [os.path.basename(f) for f in filename]
+    df = pd.DataFrame(
+        {
+            "image_name": image_name,
+            "class": classes,
+            "rle": rles,
+        }
+    )
+    df.to_csv("output.csv", index=False)
+
+if __name__=="__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--saved_dir', type=str, default="/opt/ml/input/code/best_models", help='model save at {saved_dir}')
+    parser.add_argument('--model', type=str, default="BaseModel", help='model type (default: BaseModel)')
+    args = parser.parse_args()
+    
+    args.classes = [
+        "finger-1","finger-2","finger-3","finger-4","finger-5","finger-6","finger-7","finger-8","finger-9",
+        "finger-10","finger-11","finger-12","finger-13","finger-14","finger-15","finger-16","finger-17",
+        "finger-18","finger-19","Trapezium","Trapezoid","Capitate","Hamate","Scaphoid","Lunate",
+        "Triquetrum","Pisiform","Radius","Ulna",
+        ]
+    
+    # for XRayInferenceDataset __getitem__
+    global IMAGE_ROOT
+    IMAGE_ROOT = "/opt/ml/input/data/test/DCM"
+
+    main(args)
