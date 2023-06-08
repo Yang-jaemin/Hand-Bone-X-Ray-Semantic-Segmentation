@@ -11,6 +11,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+from importlib import import_module
 
 import wandb
 from dataset import XRayDataset
@@ -101,6 +102,8 @@ def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
 
 # ! Training Process
 def train(model, data_loader, val_loader, criterion, optimizer, args):
+    torch.cuda.empty_cache()
+
     print(f"Start Training...")
 
     n_class = len(args.classes)
@@ -148,7 +151,11 @@ def train(model, data_loader, val_loader, criterion, optimizer, args):
 def main(args):
 
     # ! Model Importation & Loss function and Optimizer
-    model = fcn_resnet101(classes=args.classes)
+    model_module = getattr(import_module("model"), args.model)  # default: BaseModel
+    model = model_module(
+        classes=args.classes
+    )
+
     criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(params=model.parameters(), lr=args.lr, weight_decay=1e-6)
 
@@ -160,7 +167,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--seed', type=int, default=127, help='random seed (default: 127)') # RANDOM SEED
-    parser.add_argument('--epochs', type=int, default=10, help='number of epochs to train (default: 10)')
+    parser.add_argument('--epochs', type=int, default=20, help='number of epochs to train (default: 10)')
     parser.add_argument('--batch_size', type=int, default=8, help='input batch size for training (default: 8)')
     parser.add_argument('--wandb', type=int, default=1, help='1 : save in wandb, 0 : do not save in wandb')
     parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
@@ -219,3 +226,4 @@ if __name__ == "__main__":
 
     main(args)
     send_message_slack(text="Model Learning Completed")
+
