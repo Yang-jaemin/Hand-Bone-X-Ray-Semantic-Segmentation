@@ -27,3 +27,25 @@ class fcn_resnet101(nn.Module):
     def forward(self, x):
         x = self.backbone(x)
         return x
+
+class DeepLabV3_resnet50(nn.Module):
+    def __init__(self, num_classes):
+        super(DeepLabV3_resnet50,self).__init__()
+
+        self.backbone=models.segmentation.deeplabv3_resnet50(pretrained=True)
+        self.backbone.classifier[-1]=nn.Conv2d(256, len(num_classes), kernel_size=1)
+
+    def forward(self,x):
+        x=self.backbone(x)
+        return x
+    
+class DeepLabV3_resnet101(nn.Module):
+    def __init__(self, num_classes):
+        super(DeepLabV3_resnet101,self).__init__()
+
+        self.backbone=models.segmentation.deeplabv3_resnet101(pretrained=True)
+        self.backbone.classifier[-1]=nn.Conv2d(256, len(num_classes), kernel_size=1)
+
+    def forward(self,x):
+        x=self.backbone(x)
+        return x
