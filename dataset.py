@@ -71,7 +71,7 @@ jsons = sorted(jsons)
 
 # ! Definition of Train/Valid Dataset with Group-KFold
 class XRayDataset(Dataset):
-    def __init__(self, is_train=True, transforms=None):
+    def __init__(self, is_train=True, transforms=None, val_k=0):
         _filenames = np.array(pngs)
         _labelnames = np.array(jsons)
 
@@ -85,15 +85,16 @@ class XRayDataset(Dataset):
         labelnames = []
         for i, (x, y) in enumerate(groud_kfold.split(_filenames, ys, groups)):
             if is_train:
-                if i == 0:  # ! 0번을 Valid set으로 사용
+                if i == val_k:  # ! 0번을 Valid set으로 사용
                     continue
                 filenames += list(_filenames[y])
                 labelnames += list(_labelnames[y])
 
             else:
-                filenames = list(_filenames[y])
-                labelnames = list(_labelnames[y])
-                break  # skip i > 0
+                if i == val_k:
+                    filenames = list(_filenames[y])
+                    labelnames = list(_labelnames[y])
+        print(f"IS_TRAIN={is_train}, fold{val_k} : {filenames}")  #####temp
 
         self.filenames = filenames  # ! 각 Iamge의 path가 담긴 list
         self.labelnames = labelnames  # ! 각 Label(Annotation file)의 path가 담긴 list
