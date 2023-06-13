@@ -105,7 +105,7 @@ def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
 
 
 # ! Training Process
-def train(model, data_loader, val_loader, criterion, optimizer, args):
+def train(model, data_loader, val_loader, criterion, optimizer, args, i):
     torch.cuda.empty_cache()
 
     print(f"Start Training...")
@@ -155,10 +155,14 @@ def train(model, data_loader, val_loader, criterion, optimizer, args):
                 )
                 print(f"Save model in {args.saved_dir}")
                 best_dice = dice
-                save_model(model, args.saved_dir, file_name=str(args.model) + ".pt")
+                save_model(
+                    model,
+                    args.saved_dir,
+                    file_name=str(args.model) + f"_fold{i}" + ".pt",
+                )
 
 
-def main(args):
+def main(args, i):
     set_seed(args.seed)
     # ! Model Importation & Loss function and Optimizer
     model_module = getattr(import_module("model"), args.model)  # default: BaseModel
@@ -169,7 +173,7 @@ def main(args):
 
     optimizer = optim.Adam(params=model.parameters(), lr=args.lr, weight_decay=1e-6)
 
-    train(model, train_loader, valid_loader, criterion, optimizer, args)
+    train(model, train_loader, valid_loader, criterion, optimizer, args, i)
 
 
 if __name__ == "__main__":
@@ -179,7 +183,7 @@ if __name__ == "__main__":
         "--seed", type=int, default=127, help="random seed (default: 127)"
     )  # RANDOM SEED
     parser.add_argument(
-        "--epochs", type=int, default=40, help="number of epochs to train (default: 10)"
+        "--epochs", type=int, default=1, help="number of epochs to train (default: 10)"
     )
     parser.add_argument(
         "--batch_size",
@@ -263,24 +267,25 @@ if __name__ == "__main__":
         os.mkdir(args.saved_dir)
 
     # ! Albumentation Transforms & Generation of Train/Valid Dataset
-    album_transform = A.Resize(512, 512)
-    train_dataset = XRayDataset(is_train=True, transforms=album_transform)
-    valid_dataset = XRayDataset(is_train=False, transforms=album_transform)
+    for i in range(5):
+        album_transform = A.Resize(512, 512)
+        train_dataset = XRayDataset(is_train=True, transforms=album_transform, val_k=i)
+        valid_dataset = XRayDataset(is_train=False, transforms=album_transform, val_k=i)
 
-    train_loader = DataLoader(
-        dataset=train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=8,
-        drop_last=True,
-    )
-    valid_loader = DataLoader(
-        dataset=valid_dataset,
-        batch_size=2,
-        shuffle=False,
-        num_workers=1,
-        drop_last=False,
-    )
+        train_loader = DataLoader(
+            dataset=train_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=8,
+            drop_last=True,
+        )
+        valid_loader = DataLoader(
+            dataset=valid_dataset,
+            batch_size=2,
+            shuffle=False,
+            num_workers=2,
+            drop_last=False,
+        )
 
-    main(args)
+        main(args, i)
     send_message_slack(text="Model Learning Completed")
