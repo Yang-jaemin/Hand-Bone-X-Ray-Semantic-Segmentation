@@ -87,12 +87,60 @@ class MAnet_resnet50(nn.Module):
         return x
 
 
+class MAnet_resnet101(nn.Module):
+    def __init__(self, classes):
+        super(MAnet_resnet101, self).__init__()
+
+        self.model = smp.MAnet(
+            encoder_name="resnet101",
+            encoder_weights=None,
+            in_channels=3,
+            classes=len(classes),
+        )
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+
 class DeepLabV3Plus_resnet50(nn.Module):
     def __init__(self, classes):
         super(DeepLabV3Plus_resnet50, self).__init__()
 
         self.model = smp.DeepLabV3Plus(
             encoder_name="resnet50",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=len(classes),
+        )
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+
+class PAN_resnet101(nn.Module):
+    def __init__(self, classes):
+        super(PAN_resnet101, self).__init__()
+
+        self.model = smp.PAN(
+            encoder_name="resnet101",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=len(classes),
+        )
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+
+class PAN_efficientnet_b5(nn.Module):
+    def __init__(self, classes):
+        super(PAN_efficientnet_b5, self).__init__()
+
+        self.model = smp.PAN(
+            encoder_name="efficientnet-b5",
             encoder_weights="imagenet",
             in_channels=3,
             classes=len(classes),
