@@ -12,6 +12,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from importlib import import_module
+from collections import OrderedDict
 
 import wandb
 from dataset import XRayDataset
@@ -64,7 +65,9 @@ def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
             images, masks = images.cuda(), masks.cuda()
             model = model.cuda()
 
-            outputs = model(images)["out"]
+            outputs = model(images)
+            if isinstance(outputs, OrderedDict):
+                outputs = outputs["out"]
 
             output_h, output_w = outputs.size(-2), outputs.size(-1)
             mask_h, mask_w = masks.size(-2), masks.size(-1)
@@ -94,7 +97,8 @@ def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
 
     if _wandb:
         wandb.log(
-            {"valid_loss": valid_loss / len(data_loader), "avg_dice": avg_dice}, step=epoch
+            {"valid_loss": valid_loss / len(data_loader), "avg_dice": avg_dice},
+            step=epoch,
         )
 
     return avg_dice
@@ -117,7 +121,10 @@ def train(model, data_loader, val_loader, criterion, optimizer, args):
             images, masks = images.cuda(), masks.cuda()
             model = model.cuda()
 
-            outputs = model(images)["out"]
+            outputs = model(images)
+            if isinstance(outputs, OrderedDict):
+                outputs = outputs["out"]
+
             loss = criterion(outputs, masks)
             train_loss += loss.item()
 
@@ -138,7 +145,9 @@ def train(model, data_loader, val_loader, criterion, optimizer, args):
 
         # ! validation 주기에 따른 Valid Loss 출력 및 Best Model 저장
         if (epoch + 1) % args.val_every == 0:
-            dice = validation(epoch + 1, model, val_loader, criterion, args.classes, args.wandb)
+            dice = validation(
+                epoch + 1, model, val_loader, criterion, args.classes, args.wandb
+            )
 
             if best_dice < dice:
                 print(
@@ -146,17 +155,17 @@ def train(model, data_loader, val_loader, criterion, optimizer, args):
                 )
                 print(f"Save model in {args.saved_dir}")
                 best_dice = dice
-                save_model(model, args.saved_dir, file_name= str(args.model) + ".pt")
+                save_model(model, args.saved_dir, file_name=str(args.model) + ".pt")
+
 
 def main(args):
-
     # ! Model Importation & Loss function and Optimizer
     model_module = getattr(import_module("model"), args.model)  # default: BaseModel
-    model = model_module(
-        classes=args.classes
-    )
+    model = model_module(classes=args.classes)
+    print(model)
 
     criterion = nn.BCEWithLogitsLoss()
+
     optimizer = optim.Adam(params=model.parameters(), lr=args.lr, weight_decay=1e-6)
 
     set_seed(args.seed)
@@ -166,26 +175,73 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--seed', type=int, default=127, help='random seed (default: 127)') # RANDOM SEED
-    parser.add_argument('--epochs', type=int, default=20, help='number of epochs to train (default: 10)')
-    parser.add_argument('--batch_size', type=int, default=8, help='input batch size for training (default: 8)')
-    parser.add_argument('--wandb', type=int, default=1, help='1 : save in wandb, 0 : do not save in wandb')
-    parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
-    parser.add_argument('--val_every', type=int, default=1)
-    parser.add_argument('--saved_dir', type=str, default="/opt/ml/input/code/best_models", help='model save at {saved_dir}')
-    parser.add_argument('--model', type=str, default="BaseModel", help='model type (default: BaseModel)')
-
+    parser.add_argument(
+        "--seed", type=int, default=127, help="random seed (default: 127)"
+    )  # RANDOM SEED
+    parser.add_argument(
+        "--epochs", type=int, default=40, help="number of epochs to train (default: 10)"
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=8,
+        help="input batch size for training (default: 8)",
+    )
+    parser.add_argument(
+        "--wandb",
+        type=int,
+        default=1,
+        help="1 : save in wandb, 0 : do not save in wandb",
+    )
+    parser.add_argument(
+        "--lr", type=float, default=1e-4, help="learning rate (default: 1e-4)"
+    )
+    parser.add_argument("--val_every", type=int, default=2)
+    parser.add_argument(
+        "--saved_dir",
+        type=str,
+        default="/opt/ml/input/code/best_models",
+        help="model save at {saved_dir}",
+    )
+    parser.add_argument(
+        "--model", type=str, default="BaseModel", help="model type (default: BaseModel)"
+    )
 
     args = parser.parse_args()
-    
+
     print(args)
 
     args.classes = [
-        "finger-1","finger-2","finger-3","finger-4","finger-5","finger-6","finger-7","finger-8","finger-9",
-        "finger-10","finger-11","finger-12","finger-13","finger-14","finger-15","finger-16","finger-17",
-        "finger-18","finger-19","Trapezium","Trapezoid","Capitate","Hamate","Scaphoid","Lunate",
-        "Triquetrum","Pisiform","Radius","Ulna",
-        ]
+        "finger-1",
+        "finger-2",
+        "finger-3",
+        "finger-4",
+        "finger-5",
+        "finger-6",
+        "finger-7",
+        "finger-8",
+        "finger-9",
+        "finger-10",
+        "finger-11",
+        "finger-12",
+        "finger-13",
+        "finger-14",
+        "finger-15",
+        "finger-16",
+        "finger-17",
+        "finger-18",
+        "finger-19",
+        "Trapezium",
+        "Trapezoid",
+        "Capitate",
+        "Hamate",
+        "Scaphoid",
+        "Lunate",
+        "Triquetrum",
+        "Pisiform",
+        "Radius",
+        "Ulna",
+    ]
 
     # wandb init
     if args.wandb:
@@ -200,12 +256,11 @@ if __name__ == "__main__":
                 "random_seed": args.seed,
             },
             tags=["Resize"],
-            )
-        
-    # make saved dir  
+        )
+
+    # make saved dir
     if not os.path.isdir(args.saved_dir):
         os.mkdir(args.saved_dir)
-
 
     # ! Albumentation Transforms & Generation of Train/Valid Dataset
     album_transform = A.Resize(512, 512)
@@ -220,10 +275,12 @@ if __name__ == "__main__":
         drop_last=True,
     )
     valid_loader = DataLoader(
-        dataset=valid_dataset, batch_size=2, shuffle=False, num_workers=2, drop_last=False
+        dataset=valid_dataset,
+        batch_size=2,
+        shuffle=False,
+        num_workers=2,
+        drop_last=False,
     )
-
 
     main(args)
     send_message_slack(text="Model Learning Completed")
-
