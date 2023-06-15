@@ -53,6 +53,13 @@ classes = [
     "Ulna",
 ]
 
+def encode_per_img(zeros_mask, threshold, rles):
+    zeros_mask = zeros_mask >= threshold  # encode and save
+    for segm in zeros_mask:
+        rle = encode_mask_to_rle(segm)
+        rles.append(rle)
+    zeros_mask = np.zeros((29, 2048, 2048), dtype=np.float32)
+    return zeros_mask
 
 def ensemble(submission_files):
     submission_df = [pd.read_csv(file) for file in submission_files]
@@ -70,24 +77,18 @@ def ensemble(submission_files):
         class_idx = idx % 29
         if class_idx == 0:  # finished with 1 image
             if idx != 0:
-                zeros_mask = zeros_mask >= threshold  # encode and save
-                for segm in zeros_mask:
-                    rle = encode_mask_to_rle(segm)
-                    rles.append(rle)
-                zeros_mask = np.zeros((29, 2048, 2048), dtype=np.float32)
+                zeros_mask = encode_per_img(zeros_mask, threshold, rles)
 
         for submission in submission_df:  # 모든 submission에서 해당 line을 decode
             submission = submission.to_numpy()
-            line = submission[idx]
+            line = submission[idx] # class line
 
             if isinstance(line[2], str):
                 class_mask = decode_rle_to_mask(line[2], 2048, 2048)
                 zeros_mask[class_idx] += class_mask
 
-    zeros_mask = zeros_mask >= threshold  # encode and save (last img)
-    for segm in zeros_mask:
-        rle = encode_mask_to_rle(segm)
-        rles.append(rle)
+    # for last img
+    zeros_mask = encode_per_img(zeros_mask, threshold, rles)
 
     df = pd.DataFrame(
         {
