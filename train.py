@@ -18,6 +18,8 @@ import wandb
 from dataset import XRayDataset
 from model import *
 from alarm import send_message_slack
+from loss import DiceLoss, IoULoss
+from adamp import AdamP
 
 
 # ! Definitions of Optionable Training functions & Wandb Configuration
@@ -48,7 +50,7 @@ def save_model(model, saved_dir, file_name="fcn_resnet50_best_model.pt"):
 
 
 # ! Validation Process
-def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
+def validation(epoch, model, data_loader, criterion1, criterion2, criterion3, classes, _wandb, thr=0.5):
     print()
     print(f"Start Validation #{epoch:2d}")
     model.eval()
@@ -76,7 +78,11 @@ def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
             if output_h != mask_h or output_w != mask_w:
                 outputs = F.interpolate(outputs, size=(mask_h, mask_w), mode="bilinear")
 
-            loss = criterion(outputs, masks)
+            loss = (
+                (args.loss[0] * criterion1(outputs, masks)) # BCE
+                + (args.loss[1] * criterion2(outputs, masks)) # Dice
+                + (args.loss[2] * criterion3(outputs, masks)) # IoU
+            )
             valid_loss += loss
             cnt += 1
 
@@ -105,7 +111,7 @@ def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
 
 
 # ! Training Process
-def train(model, data_loader, val_loader, criterion, optimizer, args):
+def train(model, data_loader, val_loader, criterion1, criterion2, criterion3, optimizer, args):
     torch.cuda.empty_cache()
 
     print(f"Start Training...")
@@ -125,7 +131,11 @@ def train(model, data_loader, val_loader, criterion, optimizer, args):
             if isinstance(outputs, OrderedDict):
                 outputs = outputs["out"]
 
-            loss = criterion(outputs, masks)
+            loss = (
+                (args.loss[0] * criterion1(outputs, masks)) # BCE
+                + (args.loss[1] * criterion2(outputs, masks)) # Dice
+                + (args.loss[2] * criterion3(outputs, masks)) # IoU
+            )
             train_loss += loss.item()
 
             optimizer.zero_grad()
@@ -146,7 +156,7 @@ def train(model, data_loader, val_loader, criterion, optimizer, args):
         # ! validation 주기에 따른 Valid Loss 출력 및 Best Model 저장
         if (epoch + 1) % args.val_every == 0:
             dice = validation(
-                epoch + 1, model, val_loader, criterion, args.classes, args.wandb
+                epoch + 1, model, val_loader, criterion1, criterion2, criterion3, args.classes, args.wandb
             )
 
             if best_dice < dice:
@@ -165,11 +175,13 @@ def main(args):
     model = model_module(classes=args.classes)
     print(model)
 
-    criterion = nn.BCEWithLogitsLoss()
+    criterion1 = nn.BCEWithLogitsLoss()
+    criterion2 = DiceLoss()
+    criterion3 = IoULoss()
 
-    optimizer = optim.Adam(params=model.parameters(), lr=args.lr, weight_decay=1e-6)
+    optimizer = AdamP(params=model.parameters(), lr=args.lr, weight_decay=1e-6)
 
-    train(model, train_loader, valid_loader, criterion, optimizer, args)
+    train(model, train_loader, valid_loader, criterion1, criterion2, criterion3, optimizer, args)
 
 
 if __name__ == "__main__":
@@ -205,6 +217,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model", type=str, default="BaseModel", help="model type (default: BaseModel)"
+    )
+    parser.add_argument(
+        "--loss", type=float, nargs="+", default=[1.0, 1.0, 1.0]
     )
 
     args = parser.parse_args()
@@ -254,8 +269,12 @@ if __name__ == "__main__":
                 "batch_size": args.batch_size,
                 "learning_rate": args.lr,
                 "random_seed": args.seed,
+                "BCE_weight" : args.loss[0],
+                "Dice_weight" : args.loss[1],
+                "IoU_weight" : args.loss[2],
+                "optimizer" : "AdamP",
             },
-            tags=["Resize"],
+            tags=["weight test"],
         )
 
     # make saved dir
@@ -263,24 +282,48 @@ if __name__ == "__main__":
         os.mkdir(args.saved_dir)
 
     # ! Albumentation Transforms & Generation of Train/Valid Dataset
-    album_transform = A.Resize(512, 512)
-    train_dataset = XRayDataset(is_train=True, transforms=album_transform)
-    valid_dataset = XRayDataset(is_train=False, transforms=album_transform)
+    # album_transform = A.Resize(512, 512)
+    # train_dataset = XRayDataset(is_train=True, transforms=album_transform)
+    # valid_dataset = XRayDataset(is_train=False, transforms=album_transform)
+
+    ## Augmentations for Train Dataset
+    album_transform1 = A.Compose([
+            A.Resize(512, 512, p=1.0),
+            A.ColorJitter(brightness=(0.8, 1.2), contrast=(0.8, 1.2), saturation=(0.8, 1.2), hue=(-0.2, 0.2), p=0.25),
+            A.Compose([
+                    A.Sharpen(alpha=(0.2, 0.5), lightness=(0.5, 1.0), p=1.0),
+                    A.RandomBrightnessContrast(brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2), brightness_by_max=True, p=1.0),
+            ], p=0.25),
+            # A.GridDropout(ratio=0.25, random_offset=True, holes_number_x=4, holes_number_y=4, p=0.25),
+            A.Normalize(mean=(0.121, 0.121, 0.121), std=(0.036, 0.036, 0.036), p=1.0)
+    ])
+
+    ## Augmentations for Valid Dataset, Resize & Normalize만 실시
+    album_transform2 = A.Compose([
+            A.Resize(512, 512, p=1.0),
+            A.Normalize(mean=(0.121, 0.121, 0.121), std=(0.036, 0.036, 0.036), p=1.0)
+    ])
+
+    train_dataset = XRayDataset(is_train=True, transforms=album_transform1)
+    valid_dataset = XRayDataset(is_train=False, transforms=album_transform2)
 
     train_loader = DataLoader(
         dataset=train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=8,
+        num_workers=4,
         drop_last=True,
     )
     valid_loader = DataLoader(
         dataset=valid_dataset,
-        batch_size=2,
+        batch_size=args.batch_size,
         shuffle=False,
-        num_workers=1,
+        num_workers=0,
         drop_last=False,
     )
 
-    main(args)
-    send_message_slack(text="Model Learning Completed")
+    try:
+        main(args)
+        send_message_slack(text="Model Learning Completed")
+    except:
+        send_message_slack(text="Model Learning Failed")
