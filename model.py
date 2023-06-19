@@ -201,3 +201,22 @@ class PAN_efficientnet_b5(nn.Module):
     def forward(self, x):
         x = self.model(x)
         return x
+
+class DeepLabV3_resnet50_custom(nn.Module):
+    def __init__(self, classes):
+        super(DeepLabV3_resnet50_custom,self).__init__()
+
+        self.backbone=models.segmentation.deeplabv3_resnet50(pretrained=False)
+
+        self.backbone.classifier[-5].project[0]=nn.Conv2d(1280, 1024, kernel_size=1,stride=1,bias=False)
+        self.backbone.classifier[-5].project[1]=nn.BatchNorm2d(1024,eps=1e-05,momentum=0.1,affine=True,track_running_stats=True)
+        self.backbone.classifier[-5].project[2]=nn.SELU()
+
+        self.backbone.classifier[-4]=nn.Conv2d(1024, 512, kernel_size=3,stride=1,padding=1,bias=False)
+        self.backbone.classifier[-3]=nn.BatchNorm2d(512,eps=1e-05,momentum=0.1,affine=True,track_running_stats=True)
+        self.backbone.classifier[-2]=nn.SELU()
+        self.backbone.classifier[-1]=nn.Conv2d(512, 29, kernel_size=1,stride=1)
+
+    def forward(self,x):
+        x=self.backbone(x)
+        return x
