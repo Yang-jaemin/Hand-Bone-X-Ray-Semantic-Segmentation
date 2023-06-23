@@ -132,3 +132,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+## ! Run Command
+## TODO: Server Port in command line should be changed
+## streamlit run app.py --server.port {server_port} --server.fileWatcherType none
