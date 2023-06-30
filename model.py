@@ -6,7 +6,7 @@ from torchvision import models
 import segmentation_models_pytorch as smp
 
 
-# ! Definition of Semantic Segmentator
+# FCN
 class BaseModel(nn.Module):
     def __init__(self, classes):
         super(BaseModel, self).__init__()
@@ -41,24 +41,31 @@ class fcn_resnet101_NotPretrained(nn.Module):
     def forward(self, x):
         x = self.backbone(x)
         return x
-    
+
 
 class fcn_resnet101_NotPretrained_1024(nn.Module):
     def __init__(self, classes):
         super(fcn_resnet101_NotPretrained_1024, self).__init__()
 
         self.backbone = models.segmentation.fcn_resnet101(pretrained=False)
-        self.backbone.classifier[0] = nn.Conv2d(2048, 1024, kernel_size=(3,3), stride=(1, 1), padding=1, bias=False)
-        self.backbone.classifier[1] = nn.BatchNorm2d(1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        self.backbone.classifier[0] = nn.Conv2d(
+            2048, 1024, kernel_size=(3, 3), stride=(1, 1), padding=1, bias=False
+        )
+        self.backbone.classifier[1] = nn.BatchNorm2d(
+            1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
+        )
         self.backbone.classifier[2] = nn.SELU()
         self.backbone.classifier[3] = nn.Dropout(p=0.1, inplace=False)
-        self.backbone.classifier[4] = nn.Conv2d(1024, len(classes), kernel_size=(1, 1), stride=(1, 1))
+        self.backbone.classifier[4] = nn.Conv2d(
+            1024, len(classes), kernel_size=(1, 1), stride=(1, 1)
+        )
 
     def forward(self, x):
         x = self.backbone(x)
         return x
 
 
+# DeepLabV3
 class DeepLabV3_resnet50(nn.Module):
     def __init__(self, num_classes):
         super(DeepLabV3_resnet50, self).__init__()
@@ -83,30 +90,77 @@ class DeepLabV3_resnet101(nn.Module):
         return x
 
 
-# pip install --upgrade torch torchvision
 class DeepLabV3_MobileNet_v3_Large(nn.Module):
     def __init__(self, classes):
-        super(DeepLabV3_MobileNet_v3_Large,self).__init__()
+        super(DeepLabV3_MobileNet_v3_Large, self).__init__()
 
-        self.backbone = models.segmentation.deeplabv3.deeplabv3_mobilenet_v3_large(pretrained=True)
-        self.backbone.classifier[-1]=nn.Conv2d(256, len(classes), kernel_size=1)
-    
-    def forward(self,x):
+        self.backbone = models.segmentation.deeplabv3.deeplabv3_mobilenet_v3_large(
+            pretrained=True
+        )
+        self.backbone.classifier[-1] = nn.Conv2d(256, len(classes), kernel_size=1)
+
+    def forward(self, x):
         x = self.backbone(x)
         return x
 
 
+class DeepLabV3_resnet50_custom(nn.Module):
+    def __init__(self, classes):
+        super(DeepLabV3_resnet50_custom, self).__init__()
+
+        self.backbone = models.segmentation.deeplabv3_resnet50(pretrained=False)
+
+        self.backbone.classifier[-5].project[0] = nn.Conv2d(
+            1280, 1024, kernel_size=1, stride=1, bias=False
+        )
+        self.backbone.classifier[-5].project[1] = nn.BatchNorm2d(
+            1024, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
+        )
+        self.backbone.classifier[-5].project[2] = nn.SELU()
+
+        self.backbone.classifier[-4] = nn.Conv2d(
+            1024, 512, kernel_size=3, stride=1, padding=1, bias=False
+        )
+        self.backbone.classifier[-3] = nn.BatchNorm2d(
+            512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
+        )
+        self.backbone.classifier[-2] = nn.SELU()
+        self.backbone.classifier[-1] = nn.Conv2d(512, 29, kernel_size=1, stride=1)
+
+    def forward(self, x):
+        x = self.backbone(x)
+        return x
+
+
+class DeepLabV3Plus_resnet50(nn.Module):
+    def __init__(self, classes):
+        super(DeepLabV3Plus_resnet50, self).__init__()
+
+        self.model = smp.DeepLabV3Plus(
+            encoder_name="resnet50",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=len(classes),
+        )
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+
+# FPN
 class SMP_FPN(nn.Module):
     def __init__(self, classes):
-        super(SMP_FPN,self).__init__()
+        super(SMP_FPN, self).__init__()
 
-        self.backbone = smp.FPN(classes = len(classes))
+        self.backbone = smp.FPN(classes=len(classes))
 
-    def forward(self,x):
+    def forward(self, x):
         x = self.backbone(x)
         return x
 
 
+# Unet
 class Unet_resnet101(nn.Module):
     def __init__(self, classes):
         super(Unet_resnet101, self).__init__()
@@ -123,6 +177,7 @@ class Unet_resnet101(nn.Module):
         return x
 
 
+# MANet
 class MAnet_resnet50(nn.Module):
     def __init__(self, classes):
         super(MAnet_resnet50, self).__init__()
@@ -155,22 +210,7 @@ class MAnet_resnet101(nn.Module):
         return x
 
 
-class DeepLabV3Plus_resnet50(nn.Module):
-    def __init__(self, classes):
-        super(DeepLabV3Plus_resnet50, self).__init__()
-
-        self.model = smp.DeepLabV3Plus(
-            encoder_name="resnet50",
-            encoder_weights="imagenet",
-            in_channels=3,
-            classes=len(classes),
-        )
-
-    def forward(self, x):
-        x = self.model(x)
-        return x
-
-
+# PAN
 class PAN_resnet101(nn.Module):
     def __init__(self, classes):
         super(PAN_resnet101, self).__init__()
@@ -193,6 +233,63 @@ class PAN_efficientnet_b5(nn.Module):
 
         self.model = smp.PAN(
             encoder_name="efficientnet-b5",
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=len(classes),
+        )
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+
+# HRNet models (timm)
+class HRNetV2_W48(nn.Module):
+    def __init__(self, classes):
+        super(HRNetV2_W48, self).__init__()
+
+        self.model = timm.create_model("hrnet_w48", pretrained=True)
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+
+class DeepLabV3plus_hrnet(nn.Module):
+    def __init__(self, classes):
+        super(DeepLabV3plus_hrnet, self).__init__()
+        self.model = smp.DeepLabV3Plus(
+            encoder_name=("tu-hrnet_w48"),
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=len(classes),
+        )
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+
+class PAN_hrnet(nn.Module):
+    def __init__(self, classes):
+        super(PAN_hrnet, self).__init__()
+        self.model = smp.PAN(
+            encoder_name=("tu-hrnet_w48"),
+            encoder_weights="imagenet",
+            in_channels=3,
+            classes=len(classes),
+        )
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+
+class Unetplusplus_hrnet(nn.Module):
+    def __init__(self, classes):
+        super(Unetplusplus_hrnet, self).__init__()
+        self.model = smp.UnetPlusPlus(
+            encoder_name=("tu-hrnet_w48"),
             encoder_weights="imagenet",
             in_channels=3,
             classes=len(classes),
@@ -1459,24 +1556,3 @@ class Stage4(nn.Module):
         low_out = self.activation(after_low)
 
         return high_out, medium_high_out, medium_low_out, low_out
-
-      
-class DeepLabV3_resnet50_custom(nn.Module):
-    def __init__(self, classes):
-        super(DeepLabV3_resnet50_custom,self).__init__()
-
-        self.backbone=models.segmentation.deeplabv3_resnet50(pretrained=False)
-
-        self.backbone.classifier[-5].project[0]=nn.Conv2d(1280, 1024, kernel_size=1,stride=1,bias=False)
-        self.backbone.classifier[-5].project[1]=nn.BatchNorm2d(1024,eps=1e-05,momentum=0.1,affine=True,track_running_stats=True)
-        self.backbone.classifier[-5].project[2]=nn.SELU()
-
-        self.backbone.classifier[-4]=nn.Conv2d(1024, 512, kernel_size=3,stride=1,padding=1,bias=False)
-        self.backbone.classifier[-3]=nn.BatchNorm2d(512,eps=1e-05,momentum=0.1,affine=True,track_running_stats=True)
-        self.backbone.classifier[-2]=nn.SELU()
-        self.backbone.classifier[-1]=nn.Conv2d(512, 29, kernel_size=1,stride=1)
-
-    def forward(self,x):
-        x=self.backbone(x)
-        return x
-
