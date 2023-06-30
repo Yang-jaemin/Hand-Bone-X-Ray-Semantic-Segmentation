@@ -5,3 +5,5 @@ matplotlib
 tqdm
 scikit-learn
 albumentations
+adamp
+segmentation-models-pytorch
