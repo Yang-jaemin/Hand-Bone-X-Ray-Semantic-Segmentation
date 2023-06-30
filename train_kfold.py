@@ -18,6 +18,7 @@ import wandb
 from dataset import XRayDataset
 from model import *
 from alarm import send_message_slack
+from loss import *
 
 
 # ! Definitions of Optionable Training functions & Wandb Configuration
@@ -183,7 +184,7 @@ if __name__ == "__main__":
         "--seed", type=int, default=127, help="random seed (default: 127)"
     )  # RANDOM SEED
     parser.add_argument(
-        "--epochs", type=int, default=1, help="number of epochs to train (default: 10)"
+        "--epochs", type=int, default=20, help="number of epochs to train (default: 10)"
     )
     parser.add_argument(
         "--batch_size",
@@ -268,22 +269,25 @@ if __name__ == "__main__":
 
     # ! Albumentation Transforms & Generation of Train/Valid Dataset
     for i in range(5):
-        album_transform = A.Resize(512, 512)
-        train_dataset = XRayDataset(is_train=True, transforms=album_transform, val_k=i)
-        valid_dataset = XRayDataset(is_train=False, transforms=album_transform, val_k=i)
+        train_transform = A.Compose(
+            [A.Resize(1024, 1024), A.ElasticTransform(), A.HorizontalFlip()]
+        )
+        val_transform = A.Resize(1024, 1024)
+        train_dataset = XRayDataset(is_train=True, transforms=train_transform, val_k=i)
+        valid_dataset = XRayDataset(is_train=False, transforms=val_transform, val_k=i)
 
         train_loader = DataLoader(
             dataset=train_dataset,
             batch_size=args.batch_size,
             shuffle=True,
-            num_workers=8,
+            num_workers=2,
             drop_last=True,
         )
         valid_loader = DataLoader(
             dataset=valid_dataset,
             batch_size=2,
             shuffle=False,
-            num_workers=2,
+            num_workers=1,
             drop_last=False,
         )
 
