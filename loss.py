@@ -19,3 +19,19 @@ class DiceLoss(nn.Module):
         )
 
         return 1 - dice.mean()
+
+
+class IoULoss(nn.Module):
+    def __init__(self):
+        super(IoULoss, self).__init__()
+
+    def forward(self, pred, true, eps=0.0001):
+        pred = torch.sigmoid(pred)
+        pred = pred.view(-1)
+        true = true.view(-1)
+
+        inter = (pred * true).sum()
+        union = (pred + true).sum() - inter
+        iou = (inter + eps) / (union + eps)
+
+        return 1.0 - iou
