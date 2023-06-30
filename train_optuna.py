@@ -19,7 +19,10 @@ import wandb
 from dataset import XRayDataset
 from model import *
 from alarm import send_message_slack
-from loss import DiceLos
+from loss import DiceLoss, IoULoss	
+from adamp import AdamP
+import joblib
+
 
 # ! Definitions of Optionable Training functions & Wandb Configuration
 def set_seed(RANDOM_SEED):
@@ -49,7 +52,7 @@ def save_model(model, saved_dir, file_name="fcn_resnet50_best_model.pt"):
 
 
 # ! Validation Process
-def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
+def validation(epoch, model, data_loader, criterion1, criterion2, criterion3, classes, _wandb, thr=0.5):
     print()
     print(f"Start Validation #{epoch:2d}")
     model.eval()
@@ -77,7 +80,11 @@ def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
             if output_h != mask_h or output_w != mask_w:
                 outputs = F.interpolate(outputs, size=(mask_h, mask_w), mode="bilinear")
 
-            loss = criterion(outputs, masks)
+            loss = (
+                (args.loss[0] * criterion1(outputs, masks)) # BCE
+                + (args.loss[1] * criterion2(outputs, masks)) # Dice
+                + (args.loss[2] * criterion3(outputs, masks)) # IoU
+            )
             valid_loss += loss
             cnt += 1
 
@@ -105,16 +112,50 @@ def validation(epoch, model, data_loader, criterion, classes, _wandb, thr=0.5):
     return avg_dice
 
 
+def get_data(c_size):
+    album_transform1 = A.Compose([
+            A.Resize(c_size, c_size, p=1.0),
+            A.ColorJitter(brightness=(0.8, 1.2), contrast=(0.8, 1.2), saturation=(0.8, 1.2), hue=(-0.2, 0.2), p=0.25),
+            A.Compose([
+                    A.Sharpen(alpha=(0.2, 0.5), lightness=(0.5, 1.0), p=1.0),
+                    A.RandomBrightnessContrast(brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2), brightness_by_max=True, p=1.0),
+            ], p=0.25),
+    ])
+
+    ## Augmentations for Valid Dataset, Resize & Normalize만 실시
+    album_transform2 = A.Compose([
+            A.Resize(c_size, c_size, p=1.0),
+    ])
+
+    train_dataset = XRayDataset(is_train=True, transforms=album_transform1)
+    valid_dataset = XRayDataset(is_train=False, transforms=album_transform2)
+
+    train_loader = DataLoader(
+        dataset=train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=2,
+        drop_last=True,
+    )
+    valid_loader = DataLoader(
+        dataset=valid_dataset,
+        batch_size=2,
+        shuffle=False,
+        num_workers=0,
+        drop_last=False,
+    )
+    return train_loader, valid_loader
+
 # ! Training Process
-def train(model, data_loader, val_loader, criterion, optimizer, args):
+def train(model, criterion1, criterion2, criterion3, optimizer, args):
     torch.cuda.empty_cache()
 
+    data_loader, val_loader = get_data(cfg['resize'])
     print(f"Start Training...")
 
-    n_class = len(args.classes)
     best_dice = 0.0
 
-    for epoch in range(args.epochs):
+    for epoch in range(cfg['n_epochs']):
         model.train()
         train_loss = 0
 
@@ -126,7 +167,11 @@ def train(model, data_loader, val_loader, criterion, optimizer, args):
             if isinstance(outputs, OrderedDict):
                 outputs = outputs["out"]
 
-            loss = criterion(outputs, masks)
+            loss = (	
+                (args.loss[0] * criterion1(outputs, masks)) # BCE	
+                + (args.loss[1] * criterion2(outputs, masks)) # Dice	
+                + (args.loss[2] * criterion3(outputs, masks)) # IoU	
+            )
             train_loss += loss.item()
 
             optimizer.zero_grad()
@@ -137,21 +182,20 @@ def train(model, data_loader, val_loader, criterion, optimizer, args):
             if (step + 1) % 25 == 0:
                 print(
                     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")} | '
-                    f"Epoch [{epoch+1} / {args.epochs}], "
-                    f"Step [{step+1} / {len(train_loader)}], "
+                    f"Epoch [{epoch+1} / {cfg['n_epochs']}], "
+                    f"Step [{step+1} / {len(data_loader)}], "
                     f"Loss: {round(loss.item(), 4)}"
                 )
         if args.wandb:
             wandb.log({"train_loss": train_loss / len(data_loader)}, step=epoch)
+            wandb.log({"learning_rate" : cfg["lr"]})
+            wandb.log({"epochs" : cfg["n_epochs"]})
 
-        total_dice_val = 0
         # ! validation 주기에 따른 Valid Loss 출력 및 Best Model 저장
         if (epoch + 1) % args.val_every == 0:
             dice = validation(
-                epoch + 1, model, val_loader, criterion, args.classes, args.wandb
+                epoch + 1, model, val_loader, criterion1, criterion2, criterion3, args.classes, args.wandb
             )
-
-            total_dice_val += dice
 
             if best_dice < dice:
                 print(
@@ -161,38 +205,42 @@ def train(model, data_loader, val_loader, criterion, optimizer, args):
                 best_dice = dice
                 save_model(model, args.saved_dir, file_name=str(args.model) + ".pt")
 
-        dice_val = total_dice_val / len(epoch / args.val_every)
-
-    return dice_val
+    return best_dice
 
 
-def make_cfg(args, trial):
-    cfg = {
+def make_cfg(trial):
+    m_cfg = {
           'n_epochs' : trial.suggest_int('n_epochs', 10, 40, 5),
-          'seed' : 0,
+          'seed' : 127,
           'resize' : trial.suggest_categorical('resize', [1024,512,256]),
           'lr' : trial.suggest_loguniform('lr', 1e-3, 1e-2),
-          'momentum': trial.suggest_uniform('momentum', 0.4, 0.99),
-          'optimizer': trial.suggest_categorical('optimizer',[optim.Adam, optim.AdamW, optim.RAdam])
+        #   'momentum': trial.suggest_uniform('momentum', 0.4, 0.99),
+        #   'optimizer': trial.suggest_categorical('optimizer',[optim.Adam, optim.AdamW, optim.RAdam])
           }
-    return cfg
+    return m_cfg
 
 
-def main(args):
+def main(trial):
+    global args
+    global cfg
+    
     set_seed(args.seed)
-    cfg = make_cfg(args)
+    cfg = make_cfg(trial)
+
 
     # ! Model Importation & Loss function and Optimizer
     model_module = getattr(import_module("model"), args.model)  # default: BaseModel
     model = model_module(classes=args.classes)
     print(model)
 
-    criterion = DiceLoss()
+    criterion1 = nn.BCEWithLogitsLoss()
+    criterion2 = DiceLoss()
+    criterion3 = IoULoss()
 
     # optimizer = optim.Adam(params=model.parameters(), lr=args.lr, weight_decay=1e-6)
-    optimizer = cfg['optimizer'](model.parameters(), lr = cfg['lr'], weight_decay=1e-6)
+    optimizer = AdamP(params=model.parameters(), lr=cfg['lr'], weight_decay=1e-2)
 
-    dice_val = train(model, train_loader, valid_loader, criterion, optimizer, args)
+    dice_val = train(model, criterion1,criterion2, criterion3, optimizer, args)
     return dice_val
 
 
@@ -203,7 +251,7 @@ if __name__ == "__main__":
         "--seed", type=int, default=127, help="random seed (default: 127)"
     )  # RANDOM SEED
     parser.add_argument(
-        "--epochs", type=int, default=40, help="number of epochs to train (default: 10)"
+        "--epochs", type=int, default=40, help="number of epochs to train (default: 40)"
     )
     parser.add_argument(
         "--batch_size",
@@ -230,10 +278,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model", type=str, default="BaseModel", help="model type (default: BaseModel)"
     )
+    parser.add_argument(
+        "--loss", type=float, nargs="+", default=[1.0, 1.0, 1.0]
+    )
 
     args = parser.parse_args()
 
-    print(args)
+    # print(args)
 
     args.classes = [
         "finger-1",
@@ -271,44 +322,46 @@ if __name__ == "__main__":
     if args.wandb:
         wandb.init(
             project="HandBoneSeg",
-            notes="Baseline Code Test",
+            notes="Optuna Test",
             config={
                 "model": args.model,
-                "epochs": args.epochs,
+                # "epochs": args.epochs,
                 "batch_size": args.batch_size,
-                "learning_rate": args.lr,
+                # "learning_rate": args.lr,
                 "random_seed": args.seed,
+                "BCE_weight" : args.loss[0],
+                "Dice_weight" : args.loss[1],
+                "IoU_weight" : args.loss[2],
+                "optimizer" : "AdamP",
             },
-            tags=["Resize"],
+            tags=["optuna"],
         )
 
     # make saved dir
     if not os.path.isdir(args.saved_dir):
         os.mkdir(args.saved_dir)
 
-    # ! Albumentation Transforms & Generation of Train/Valid Dataset
-    album_transform = A.Resize(512, 512)
-    train_dataset = XRayDataset(is_train=True, transforms=album_transform)
-    valid_dataset = XRayDataset(is_train=False, transforms=album_transform)
-
-    train_loader = DataLoader(
-        dataset=train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=8,
-        drop_last=True,
-    )
-    valid_loader = DataLoader(
-        dataset=valid_dataset,
-        batch_size=2,
-        shuffle=False,
-        num_workers=1,
-        drop_last=False,
-    )
 
     try:
         study = optuna.create_study(sampler=optuna.samplers.TPESampler(), direction='maximize')
-        study.optimize(main(args), n_trials=30)
+        study.optimize(main, n_trials=30)
+        joblib.dump(study, './optuna_output.pkl')
+        pruned_trials = [t for t in study.trials if t.state == optuna.structs.TrialState.PRUNED]
+        complete_trials = [t for t in study.trials if t.state == optuna.structs.TrialState.COMPLETE]
+
+        print("Study statistics: ")
+        print("  Number of finished trials: ", len(study.trials))
+        print("  Number of pruned trials: ", len(pruned_trials))
+        print("  Number of complete trials: ", len(complete_trials))
+
+        print("Best trial:")
+        trial = study.best_trial
+
+        print("  Value: ", trial.value)
+
+        print("  Params: ")
+        for key, value in trial.params.items():
+            print("    {}: {}".format(key, value))
         send_message_slack(text="Model Learning Completed")
     except:
         send_message_slack(text="Model Learning Failed")
