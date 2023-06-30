@@ -15,7 +15,7 @@
 
 | 이름 | github | 맡은 역할 |
 | --- | --- | --- |
-| 김보경 | [github](https://github.com/bogeoung) | Baseline code 리팩토링, smp Model 구현 및 실험, Loss weight 실험, Optuna 구현, inference ensemble 구현 |
+| 김보경&nbsp;&nbsp; | [github](https://github.com/bogeoung) | Baseline code 리팩토링, smp Model 구현 및 실험, Loss weight 실험, Optuna 구현, inference ensemble 구현|
 | 김정주 | [github](https://github.com/Kim-Jeong-Ju) | Augmentation 실험, Model 설계/성능 측정, Loss 설계/실험, Visualization 구축 |
 | 양재민 | [github](https://github.com/Yang-jaemin) | Augmentation 실험, smp Model 구현 및 실험 Scratch Model 구현, 실험 |
 | 임준표 | [github](https://github.com/anonlim) | Augmentation 실험, Model 구현 및 실험, inference augmentation, 학습 속도 가속화 |
