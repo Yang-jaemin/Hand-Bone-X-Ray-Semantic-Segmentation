@@ -85,6 +85,17 @@ input/
 
 <br/>
 
+## 📎 Experiment
+
+- Baseline model Test
+- Augmentation Test
+- Loss Test
+- Ensemble Test  
+
+실험 관련 세부사항은 [랩업리포트](Semantic_Seg_Wrapup_Report_CV10.pdf) 참고.
+
+<br/>
+
 ## 💡 Result
 
 
