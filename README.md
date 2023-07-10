@@ -4,7 +4,7 @@
 ## 🔎 Project Overview
 
 
-<img width="1079" alt="스크린샷 2023-06-30 오후 4 34 39" src="https://github.com/boostcampaitech5/level2_cv_semanticsegmentation-cv-10/assets/103094730/6cb931a2-f402-4772-b38d-0ae33c320017">
+![스크린샷 2023-06-30 오후 4 34 39](https://github.com/boostcampaitech5/level2_cv_semanticsegmentation-cv-10/assets/103094730/984bff6d-9dc7-4689-a468-b4dd9cb167aa)
 
 의료분야에서 Segmentation task는 진단 및 치료 계획을 개발하는 데 필수적이다. Bone Segmentation은 뼈의 형태나 위치가 변형되거나 부러지거나 골절 등이 있을 경우, 문제를 정확하게 파악하여 적절한 치료를 시행할 수 있다. 또한 수술 계획을 세우거나 의료 장비에 필요한 정보를 제공하고 교육 목적으로도 사용될 수 있다. 이번 프로젝트를 통해 뼈를 정확하게 Segmentation하는 모델을 개발함으로써 의료 분야에 다양한 목적으로 도움이 되고자 했다.
 
@@ -27,7 +27,7 @@
 
 - 이미지 크기 : (2048, 2048)
 
-<img width="453" alt="스크린샷 2023-06-30 오후 4 50 32" src="https://github.com/boostcampaitech5/level2_cv_semanticsegmentation-cv-10/assets/103094730/33cac93a-58cf-4597-9b31-9286501105db">
+<img width="453" alt="스크린샷 2023-06-30 오후 4 50 32" src="https://github.com/boostcampaitech5/level2_cv_semanticsegmentation-cv-10/assets/103094730/3c26bbe6-29e6-4606-8e50-80feeac308eb">
 
 
 - 29 classes : 손가락 / 손등 / 팔로 구성
@@ -113,7 +113,8 @@ input/
 
 Public : 0.9721 -> Private : 0.9728
 
-![Untitled](https://github.com/boostcampaitech5/level2_cv_semanticsegmentation-cv-10/assets/103094730/28012864-9d85-4cc8-8abd-c9f3cde5d878)
+![Untitled](https://github.com/boostcampaitech5/level2_cv_semanticsegmentation-cv-10/assets/103094730/8301690a-70a1-4b35-b24f-be72b22fb535)
+
 
 <br/>
 
